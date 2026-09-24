@@ -1,0 +1,103 @@
+name: Headless Server Bundle
+
+# 把 :headless 打成可部署的 Web 服务端分发包 (bin/ + lib/)，供其他前端接入。
+# 本仓库原有 CI 只产 apk / 桌面三端 / iOS / OHOS / web 前端，没有任何 headless 构建，
+# 服务端产物只能靠本机手搓 —— 本工作流补上这一段，并把产物收口成 artifact。
+#
+# 产物: legado-headless-server.tar.gz (内含 bin/ + lib/，资源与 quickjs native 均在 jar 内)
+# 跑法: Actions → Headless Server Bundle → Run workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'appVersion (形如 3.26.0924)'
+        required: false
+        default: '3.26.0924'
+        type: string
+  push:
+    branches:
+      - master
+    paths:
+      - '.github/workflows/headless-server.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Gradle build-cache 共享
+        uses: actions/cache@v5
+        with:
+          path: ~/.gradle/caches/build-cache-1
+          key: gradle-buildcache-${{ runner.os }}-${{ github.ref_name }}
+          restore-keys: |
+            gradle-buildcache-${{ runner.os }}-
+
+      - name: Show native toolchain
+        # quickjs JVM native 走 cmake + 宿主编译器；先记一笔，构建失败时好定位
+        run: |
+          cmake --version | head -1
+          cc --version | head -1
+          make --version | head -1
+
+      - name: Build headless bundle
+        env:
+          APP_VERSION: ${{ inputs.version || '3.26.0924' }}
+        run: |
+          chmod +x gradlew
+          ./gradlew :headless:headlessDist -PappVersion="$APP_VERSION" \
+            --build-cache --parallel --daemon --warning-mode all
+
+      - name: Verify bundle
+        run: |
+          set -euo pipefail
+          B=headless/build/headless-bundle
+          test -d "$B/bin" || { echo "::error::missing bin/"; exit 1; }
+          test -d "$B/lib" || { echo "::error::missing lib/"; exit 1; }
+          echo "== 体积 =="; du -sh "$B"
+          echo "== bin =="; ls -la "$B/bin"
+          echo "== lib jar 数: $(ls "$B"/lib/*.jar | wc -l) =="
+          echo "== 关键 lib =="
+          ls "$B/lib" | grep -iE 'headless|quickjs|ui-jvm|core-jvm|skiko' || true
+          test -f "$B/lib/liblegado_quickjs.so" \
+            && echo "quickjs native: OK" \
+            || { echo "::error::liblegado_quickjs.so 不在 lib/ 里"; exit 1; }
+          # Web UI 资源必须在 classpath 上，否则服务端只能出 API、出不了页面
+          found=0
+          for j in "$B"/lib/*.jar; do
+            if unzip -l "$j" 2>/dev/null | grep -q 'web/index.html'; then
+              echo "web/index.html -> $(basename "$j")"; found=1
+            fi
+          done
+          [ "$found" = 1 ] || { echo "::error::分发包里找不到 web/index.html"; exit 1; }
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          cd headless/build/headless-bundle
+          tar -czf "$GITHUB_WORKSPACE/legado-headless-server.tar.gz" bin lib
+          ls -la "$GITHUB_WORKSPACE/legado-headless-server.tar.gz"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: legado-headless-server
+          path: legado-headless-server.tar.gz
+          if-no-files-found: error
+          retention-days: 30
