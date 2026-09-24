@@ -65,6 +65,10 @@ jobs:
             --build-cache --parallel --daemon --warning-mode all
 
       - name: Verify bundle
+        # 断言分发包自包含: bin 启动脚本 + lib jar + jar 内的 quickjs native + jar 内的 Web UI 资源。
+        # 注意 quickjs 不是 lib/ 下的散装文件 —— build.gradle.kts 的
+        # copyQuickjsNativeToHeadlessResources 把它塞进 headless.jar 资源，Main 启动时提取到临时文件
+        # 再 System.load，所以只能查 jar 内容，不能查 lib/ 目录。
         run: |
           set -euo pipefail
           B=headless/build/headless-bundle
@@ -72,17 +76,24 @@ jobs:
           test -d "$B/lib" || { echo "::error::missing lib/"; exit 1; }
           echo "== 体积 =="; du -sh "$B"
           echo "== bin =="; ls -la "$B/bin"
+          test -x "$B/bin/headless" || { echo "::error::bin/headless 缺失或不可执行"; exit 1; }
           echo "== lib jar 数: $(ls "$B"/lib/*.jar | wc -l) =="
           echo "== 关键 lib =="
           ls "$B/lib" | grep -iE 'headless|quickjs|ui-jvm|core-jvm|skiko' || true
-          test -f "$B/lib/liblegado_quickjs.so" \
-            && echo "quickjs native: OK" \
-            || { echo "::error::liblegado_quickjs.so 不在 lib/ 里"; exit 1; }
-          # Web UI 资源必须在 classpath 上，否则服务端只能出 API、出不了页面
+
+          echo "== quickjs native (应在 headless.jar 内) =="
+          unzip -l "$B/lib/headless.jar" | grep -i 'quickjs' || true
+          unzip -l "$B/lib/headless.jar" | grep -qi 'liblegado_quickjs.so' \
+            || { echo "::error::headless.jar 内没有 liblegado_quickjs.so"; exit 1; }
+          echo "quickjs native: OK"
+
+          echo "== Web UI 资源 (应在 :ui 的 jar 内) =="
           found=0
           for j in "$B"/lib/*.jar; do
             if unzip -l "$j" 2>/dev/null | grep -q 'web/index.html'; then
-              echo "web/index.html -> $(basename "$j")"; found=1
+              echo "web/index.html -> $(basename "$j")"
+              unzip -l "$j" | grep 'web/index.html'
+              found=1
             fi
           done
           [ "$found" = 1 ] || { echo "::error::分发包里找不到 web/index.html"; exit 1; }
