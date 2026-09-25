@@ -2,7 +2,7 @@ package io.legado.app.api.controller
 
 import io.legado.app.data.AppDbProviders
 import io.legado.app.data.entities.Book
-import io.legado.app.data.entities.BookType
+import io.legado.app.constant.BookType
 import io.legado.app.help.book.BookExportProviders
 import io.legado.app.utils.systemCurrentTimeMillis
 import io.legado.app.utils.toInputStream
