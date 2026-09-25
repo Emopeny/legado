@@ -4,6 +4,7 @@ import io.legado.app.api.ReturnData
 import io.legado.app.api.controller.BackupController
 import io.legado.app.api.controller.BookController
 import io.legado.app.api.controller.BookSourceController
+import io.legado.app.api.controller.OpdsController
 import io.legado.app.api.controller.ReplaceRuleController
 import io.legado.app.utils.toInputStream
 import io.legado.app.web.auth.WebAuthProviders
@@ -27,6 +28,14 @@ object WebApi {
         // 否则前端连登录页都加载不出来。未注册 provider 或未配置密码时 authorized() 恒真 (旧行为)。
         if (request.path in apiPaths && !authorized(request)) {
             return unauthorized()
+        }
+        // OPDS: 返回 Atom XML / 取书字节流, 不走 ReturnData 分派 (需自带状态码与 Content-Type)
+        if (request.method == "GET" && request.path.startsWith("/opds")) {
+            return when (request.path) {
+                "/opds/bookshelf" -> OpdsController.bookshelf()
+                "/opds/download" -> OpdsController.download(request.query)
+                else -> OpdsController.root()
+            }
         }
         if (request.path == "/mediaStream") {
             return mediaStreamGone(request.method)
@@ -134,6 +143,8 @@ object WebApi {
      */
     private val apiPaths = setOf(
         "/mediaStream", "/getBackupZip",
+        // OPDS (KOReader / 静读天下等标准客户端, 走 HTTP Basic)
+        "/opds", "/opds/", "/opds/bookshelf", "/opds/download",
         "/auth/logout", "/auth/password",
         "/saveBookSource", "/saveBookSources", "/deleteBookSources",
         "/saveBook", "/deleteBook", "/saveBookProgress", "/addLocalBook",
