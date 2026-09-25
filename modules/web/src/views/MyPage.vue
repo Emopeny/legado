@@ -68,6 +68,82 @@
         </div>
       </div>
 
+      <!-- WebDAV 云端备份 -->
+      <div class="card">
+        <div class="card-title">WebDAV 云端备份</div>
+        <div class="card-row link-row" @click="toggleWebDavForm">
+          <div class="row-content">
+            <span class="row-label">WebDAV 配置</span>
+            <span class="row-desc">{{ webDavSummary }}</span>
+          </div>
+          <span class="row-arrow">{{ showWebDavForm ? '\u25be' : '\u203a' }}</span>
+        </div>
+        <div v-if="showWebDavForm" class="webdav-form">
+          <input
+            v-model="webDavForm.url"
+            class="webdav-input"
+            type="text"
+            placeholder="WebDAV 地址，如 https://dav.jianguoyun.com/dav/"
+          />
+          <input v-model="webDavForm.account" class="webdav-input" type="text" placeholder="账号" />
+          <input
+            v-model="webDavForm.password"
+            class="webdav-input"
+            type="password"
+            :placeholder="webDav.hasPassword ? '密码（留空则不修改）' : '密码'"
+          />
+          <input
+            v-model="webDavForm.dir"
+            class="webdav-input"
+            type="text"
+            placeholder="子目录（默认 legado）"
+          />
+          <input
+            v-model="webDavForm.deviceName"
+            class="webdav-input"
+            type="text"
+            placeholder="设备名（可选，用于区分备份文件）"
+          />
+          <button class="backup-btn primary" type="button" :disabled="busy" @click="saveWebDav">
+            保存并测试连接
+          </button>
+        </div>
+        <div class="backup-actions">
+          <button
+            class="backup-btn primary"
+            type="button"
+            :disabled="busy || !webDav.isOk"
+            @click="doWebDavBackup"
+          >
+            上传备份
+          </button>
+          <button
+            class="backup-btn"
+            type="button"
+            :disabled="busy || !webDav.isOk"
+            @click="openRestorePicker"
+          >
+            从云端恢复
+          </button>
+        </div>
+        <div v-if="showRestorePicker" class="webdav-restore">
+          <div v-if="backupNames.length === 0" class="webdav-empty">云端暂无备份</div>
+          <template v-else>
+            <select v-model="selectedBackup" class="webdav-input">
+              <option v-for="n in backupNames" :key="n" :value="n">{{ n }}</option>
+            </select>
+            <button
+              class="backup-btn primary"
+              type="button"
+              :disabled="busy || !selectedBackup"
+              @click="doWebDavRestore"
+            >
+              恢复所选备份
+            </button>
+          </template>
+        </div>
+      </div>
+
       <!-- 更多与帮助 -->
       <div class="card">
         <div class="card-title">更多</div>
@@ -75,6 +151,10 @@
           <span class="row-label">使用帮助</span>
           <span class="row-arrow">›</span>
         </a>
+        <div v-if="authEnabledRef" class="card-row link-row" @click="doLogout">
+          <span class="row-label">退出登录</span>
+          <span class="row-arrow">›</span>
+        </div>
         <div class="card-row">
           <div class="row-content">
             <span class="row-label">Legado Web</span>
@@ -93,7 +173,8 @@ defineOptions({ name: 'MyPage' })
 import '@/assets/webui.css'
 import { useBookStore } from '@/store'
 import API from '@api'
-import { toast } from '@/utils/toast'
+import { authEnabled as authEnabledRef, logout } from '@/api/auth'
+import { toast, msgbox } from '@/utils/toast'
 
 const router = useRouter()
 const store = useBookStore()
@@ -181,6 +262,140 @@ const onImportFile = async (evt: Event) => {
     busy.value = false
   }
 }
+
+// ---- WebDAV 云端备份 ----
+const webDav = reactive({
+  url: '',
+  account: '',
+  dir: '',
+  deviceName: '',
+  hasPassword: false,
+  isOk: false,
+})
+const webDavForm = reactive({
+  url: '',
+  account: '',
+  password: '',
+  dir: '',
+  deviceName: '',
+})
+const showWebDavForm = ref(false)
+const showRestorePicker = ref(false)
+const backupNames = ref<string[]>([])
+const selectedBackup = ref('')
+
+const webDavSummary = computed(() => {
+  if (!webDav.url && !webDav.account) return '未配置，点击展开填写'
+  if (!webDav.isOk) return `${webDav.account || '未填账号'} · 未连接`
+  return `${webDav.account} · ${webDav.url}`
+})
+
+const applyWebDav = (cfg: {
+  url: string
+  account: string
+  dir: string
+  deviceName: string
+  hasPassword: boolean
+  isOk: boolean
+}) => {
+  webDav.url = cfg.url || ''
+  webDav.account = cfg.account || ''
+  webDav.dir = cfg.dir || ''
+  webDav.deviceName = cfg.deviceName || ''
+  webDav.hasPassword = cfg.hasPassword === true
+  webDav.isOk = cfg.isOk === true
+  webDavForm.url = webDav.url
+  webDavForm.account = webDav.account
+  webDavForm.dir = webDav.dir
+  webDavForm.deviceName = webDav.deviceName
+  webDavForm.password = ''
+}
+
+const loadWebDav = async () => {
+  try {
+    applyWebDav(await API.getWebDavConfig())
+  } catch (e) {
+    console.error('getWebDavConfig error:', e)
+  }
+}
+
+const toggleWebDavForm = async () => {
+  showWebDavForm.value = !showWebDavForm.value
+  if (showWebDavForm.value) await loadWebDav()
+}
+
+const saveWebDav = async () => {
+  busy.value = true
+  try {
+    const cfg = await API.saveWebDavConfig({ ...webDavForm })
+    applyWebDav(cfg)
+    toast.success(cfg.isOk ? '配置已保存，WebDAV 连接正常' : '配置已保存，但连接未通过')
+  } catch (e) {
+    toast.error((e as Error)?.message || '保存 WebDAV 配置失败')
+  } finally {
+    busy.value = false
+  }
+}
+
+const doWebDavBackup = async () => {
+  busy.value = true
+  try {
+    const fileName = await API.webDavBackup(false)
+    toast.success(`已上传云端备份 ${fileName}`)
+  } catch (e) {
+    const msg = (e as Error)?.message || '上传备份失败'
+    if (msg.includes('已存在同名备份')) {
+      try {
+        await msgbox.confirm(msg, '覆盖云端备份')
+        const fileName = await API.webDavBackup(true)
+        toast.success(`已覆盖上传 ${fileName}`)
+      } catch {
+        // 用户取消
+      }
+      return
+    }
+    toast.error(msg)
+  } finally {
+    busy.value = false
+  }
+}
+
+const openRestorePicker = async () => {
+  busy.value = true
+  try {
+    backupNames.value = await API.listWebDavBackups()
+    selectedBackup.value = backupNames.value[0] || ''
+    showRestorePicker.value = true
+  } catch (e) {
+    toast.error((e as Error)?.message || '获取云端备份列表失败')
+  } finally {
+    busy.value = false
+  }
+}
+
+const doWebDavRestore = async () => {
+  if (!selectedBackup.value) return
+  busy.value = true
+  try {
+    await API.webDavRestore(selectedBackup.value)
+    toast.success(`已从 ${selectedBackup.value} 恢复，数据已写回`)
+    store.clearShelfCache()
+    store.loadGroups()
+    store.loadBookShelf()
+    showRestorePicker.value = false
+  } catch (e) {
+    toast.error((e as Error)?.message || '恢复失败')
+  } finally {
+    busy.value = false
+  }
+}
+
+const doLogout = async () => {
+  await logout()
+  router.replace('/login')
+}
+
+onMounted(loadWebDav)
 </script>
 
 <style lang="scss" scoped>
@@ -306,6 +521,37 @@ const onImportFile = async (evt: Event) => {
       }
     }
 
+    .webdav-form,
+    .webdav-restore {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 6px 0 4px;
+    }
+
+    .webdav-input {
+      width: 100%;
+      height: 34px;
+      border: 1px solid var(--web-border, #dcdfe6);
+      border-radius: 6px;
+      padding: 0 10px;
+      font-size: 13px;
+      color: var(--web-text, #333);
+      background: #fff;
+      outline: none;
+      box-sizing: border-box;
+
+      &:focus {
+        border-color: var(--web-primary, #1e80ff);
+      }
+    }
+
+    .webdav-empty {
+      font-size: 13px;
+      color: #999;
+      padding: 4px 0;
+    }
+
     .backup-actions {
       display: flex;
       gap: 10px;
@@ -371,6 +617,16 @@ const onImportFile = async (evt: Event) => {
 
   .card .card-row .row-value {
     color: #aeaeae;
+  }
+
+  .card .webdav-input {
+    background: #555;
+    border-color: #666;
+    color: #ccc;
+  }
+
+  .card .webdav-empty {
+    color: #999;
   }
 
   .card .backup-actions .backup-btn {

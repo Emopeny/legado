@@ -3,6 +3,7 @@
 
 import type { webReadConfig } from '@/web'
 import ajax from './axios'
+import { authHeaders } from './auth'
 import type { BaseBook, Book, BookChapter, BookGroup, BookProgress, SeachBook } from '@/book'
 import type { RawSource, Source } from '@/source'
 
@@ -198,7 +199,9 @@ const getSource = (url: string) =>
 /** 下载全端标准备份 zip (BackupShared 管线); 失败抛 Error(errorMsg) */
 const getBackupZip = async (): Promise<Blob> => {
   const base = legado_http_entry_point || location.origin
-  const resp = await fetch(new URL('getBackupZip', base).toString())
+  const resp = await fetch(new URL('getBackupZip', base).toString(), {
+    headers: authHeaders(),
+  })
   if ((resp.headers.get('content-type') || '').includes('application/json')) {
     const env = (await resp.json()) as LeagdoApiResponse<unknown>
     throw new Error(env.errorMsg || '备份失败')
@@ -214,6 +217,7 @@ const restoreBackup = async (file: File): Promise<LeagdoApiResponse<unknown>> =>
   const resp = await fetch(new URL('restoreBackup', base).toString(), {
     method: 'POST',
     body: fd,
+    headers: authHeaders(),
   })
   if (!resp.ok) {
     let msg = `HTTP ${resp.status}: ${resp.statusText || '请求失败'}`
@@ -238,6 +242,7 @@ const addLocalBook = async (file: File): Promise<LeagdoApiResponse<unknown>> => 
     {
       method: 'POST',
       body: fd,
+      headers: authHeaders(),
     },
   )
   if (!resp.ok) {
@@ -340,6 +345,64 @@ export const getMediaStreamUrl = (url: string, _origin?: string): string => {
   return /^(https?:\/\/|data:|blob:)/i.test(clean) ? clean : ''
 }
 
+// ---- WebDAV 云端备份 / 恢复 ----
+
+export interface WebDavConfig {
+  url: string
+  account: string
+  dir: string
+  deviceName: string
+  hasPassword: boolean
+  isOk: boolean
+}
+
+/** data 为 JSON 字符串的信封解包 (服务端 WebDAV 接口统一返回 JSON 文本) */
+const parseJsonEnvelope = <T>(data: LeagdoApiResponse<string>, fallbackMsg: string): T => {
+  if (!data.isSuccess) throw new Error(data.errorMsg || fallbackMsg)
+  try {
+    return JSON.parse(data.data || '{}') as T
+  } catch {
+    throw new Error(fallbackMsg)
+  }
+}
+
+/** 读取 WebDAV 配置 (密码不回传, 只给 hasPassword) */
+const getWebDavConfig = async (): Promise<WebDavConfig> => {
+  const { data } = await ajax.get<LeagdoApiResponse<string>>('webDavConfig')
+  return parseJsonEnvelope<WebDavConfig>(data, '获取 WebDAV 配置失败')
+}
+
+/** 保存并测试 WebDAV 配置 (password 留空 = 保留原密码; clearPassword=true 清空) */
+const saveWebDavConfig = async (cfg: {
+  url?: string
+  account?: string
+  password?: string
+  dir?: string
+  deviceName?: string
+  clearPassword?: boolean
+}): Promise<WebDavConfig> => {
+  const { data } = await ajax.post<LeagdoApiResponse<string>>('webDavConfig', cfg)
+  return parseJsonEnvelope<WebDavConfig>(data, '保存 WebDAV 配置失败')
+}
+
+/** 列出云端 backup* 备份文件名 (按名称倒序) */
+const listWebDavBackups = async (): Promise<string[]> => {
+  const { data } = await ajax.get<LeagdoApiResponse<string>>('webDavBackups')
+  return parseJsonEnvelope<string[]>(data, '获取云端备份列表失败')
+}
+
+/** 生成备份并上传 WebDAV; force=true 时覆盖云端同名备份 */
+const webDavBackup = async (force = false): Promise<string> => {
+  const { data } = await ajax.post<LeagdoApiResponse<string>>('webDavBackup', { force })
+  return parseJsonEnvelope<{ fileName: string }>(data, '上传备份失败').fileName
+}
+
+/** 从云端指定备份恢复 */
+const webDavRestore = async (name: string): Promise<void> => {
+  const { data } = await ajax.post<LeagdoApiResponse<boolean>>('webDavRestore', { name })
+  if (!data.isSuccess) throw new Error(data.errorMsg || '恢复失败')
+}
+
 const getExploreKinds = (url: string) =>
   ajax.get<LeagdoApiResponse<WebExploreKind[]>>(`getExploreKinds?url=${encodeURIComponent(url)}`)
 
@@ -375,6 +438,11 @@ export default {
   getBackupZip,
   restoreBackup,
   addLocalBook,
+  getWebDavConfig,
+  saveWebDavConfig,
+  listWebDavBackups,
+  webDavBackup,
+  webDavRestore,
   saveSource,
   deleteSource,
   debug,
@@ -396,4 +464,9 @@ export {
   importBookSourcesFromUrl,
   getProxyCoverUrl,
   getProxyImageUrl,
+  getWebDavConfig,
+  saveWebDavConfig,
+  listWebDavBackups,
+  webDavBackup,
+  webDavRestore,
 }

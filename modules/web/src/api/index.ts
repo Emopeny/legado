@@ -6,6 +6,7 @@ import API, {
   setWebsocketOnMessage,
 } from './api'
 import ajax, { type ApiResponse } from './axios'
+import { authHeaders, clearToken, resetAuthCheck } from './auth'
 import { validatorHttpUrl } from '@/utils/utils'
 import { toast } from '@/utils/toast'
 import { useConnectionStore } from '@/store'
@@ -19,8 +20,36 @@ const conn = () => (connectionStore ??= useConnectionStore())
 
 const LeagdoApiResponseKeys: string[] = Array.of('isSuccess', 'errorMsg')
 
+/** 请求拦截: 服务端启用访问密码后, 所有 API 请求带上 Bearer token */
+ajax.interceptors.request.use(config => {
+  const extra = authHeaders()
+  if (Object.keys(extra).length === 0) return config
+  return {
+    ...config,
+    options: {
+      ...(config.options || {}),
+      headers: { ...extra, ...((config.options?.headers as Record<string, string>) || {}) },
+    },
+  }
+})
+
+/** 401 → 清 token 回登录页 (服务端 token 重启失效, 不能停在空白页) */
+const handleUnauthorized = () => {
+  clearToken()
+  resetAuthCheck()
+  if (typeof location !== 'undefined' && !location.hash.startsWith('#/login')) {
+    const redirect = location.hash.replace(/^#/, '') || '/shelf'
+    location.hash = `#/login?redirect=${encodeURIComponent(redirect)}`
+  }
+}
+
 /** Interceptor: check if resp is LeagdoApiResponse*/
 const responseCheckInterceptor = (resp: ApiResponse) => {
+  if (resp.status === 401) {
+    handleUnauthorized()
+    toast.error({ message: '未登录或凭据已失效，请重新登录', grouping: true })
+    throw new Error('未登录或凭据已失效')
+  }
   let isLeagdoApiResponse = true
   try {
     const data = resp.data as Record<string, unknown>
@@ -109,3 +138,4 @@ setApiEntryPoint(
 
 export default API
 export * from './api'
+export * from './auth'
