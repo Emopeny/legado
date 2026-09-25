@@ -9,6 +9,7 @@ import io.legado.app.help.storage.BackupShared
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -126,7 +127,7 @@ object WebDavController {
     }
 
     /** 统一: 先 upConfig 校验配置, 再执行 action; 异常转 errorMsg, 取消异常原样抛。 */
-    private suspend inline fun runWebDav(crossinline action: () -> ReturnData): ReturnData {
+    private suspend fun runWebDav(action: suspend () -> ReturnData): ReturnData {
         return try {
             AppWebDavShared.upConfig()
             if (!AppWebDavShared.isOk) {
