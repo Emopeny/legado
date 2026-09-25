@@ -4,6 +4,7 @@ import fi.iki.elonen.NanoWSD
 import io.legado.app.web.api.DebugWsHandler
 import io.legado.app.web.api.SearchWsHandler
 import io.legado.app.web.socket.NanoWsSession
+import io.legado.app.web.auth.WebAuthProviders
 import io.legado.app.web.utils.WebStringsProviders
 
 /**
@@ -20,6 +21,23 @@ class WebSocketServer(port: Int) : NanoWSD(port) {
     override fun openWebSocket(handshake: IHTTPSession): WebSocket? {
         // 拉起 Service 续命 (app 端) / no-op (桌面端)
         WebServerManager.serve()
+        // 鉴权: WebSocket 握手无法自定义请求头, 故同时接受
+        //   - Authorization 头 (浏览器/OPDS 客户端对已认证 origin 会自动带 Basic)
+        //   - ?token=*** (前端登录后拿到的 Bearer token 走查询参数)
+        // 未注册 provider 或未配置密码时放行 (旧行为)。拒绝 = 返回 null, NanoWSD 直接关掉握手。
+        val auth = WebAuthProviders.getOrNull()
+        if (auth != null && auth.isEnabled()) {
+            val tokenParam = handshake.parms?.get("token")
+                ?: handshake.queryParameterString
+                    ?.split('&')
+                    ?.firstOrNull { it.startsWith("token=") }
+                    ?.substringAfter("token=")
+            if (!auth.verifyAuthorization(handshake.headers["authorization"]) &&
+                !auth.verifyToken(tokenParam)
+            ) {
+                return null
+            }
+        }
         val cannotEmptyMsg = WebStringsProviders.get().cannotEmpty
         return when (handshake.uri) {
             "/bookSourceDebug" -> {
