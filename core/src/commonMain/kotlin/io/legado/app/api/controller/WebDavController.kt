@@ -57,16 +57,16 @@ object WebDavController {
     suspend fun saveConfig(postData: String?): ReturnData {
         val obj = parseObject(postData) ?: return ReturnData().setErrorMsg("请求体格式错误")
         val prefs = PreferenceProviders.get()
-        obj["url"]?.jsonPrimitive?.contentOrNull()?.let { prefs.putString(PreferKey.webDavUrl, it.trim()) }
-        obj["account"]?.jsonPrimitive?.contentOrNull()?.let {
+        obj["url"]?.jsonPrimitive?.contentOrNull?.let { prefs.putString(PreferKey.webDavUrl, it.trim()) }
+        obj["account"]?.jsonPrimitive?.contentOrNull?.let {
             prefs.putString(PreferKey.webDavAccount, it.trim())
         }
-        obj["dir"]?.jsonPrimitive?.contentOrNull()?.let { prefs.putString(PreferKey.webDavDir, it.trim()) }
-        obj["deviceName"]?.jsonPrimitive?.contentOrNull()?.let {
+        obj["dir"]?.jsonPrimitive?.contentOrNull?.let { prefs.putString(PreferKey.webDavDir, it.trim()) }
+        obj["deviceName"]?.jsonPrimitive?.contentOrNull?.let {
             prefs.putString(PreferKey.webDavDeviceName, it.trim())
         }
         val clearPassword = obj["clearPassword"]?.jsonPrimitive?.booleanOrNull == true
-        val password = obj["password"]?.jsonPrimitive?.contentOrNull()
+        val password = obj["password"]?.jsonPrimitive?.contentOrNull
         if (clearPassword) {
             prefs.putString(PreferKey.webDavPassword, "")
         } else if (!password.isNullOrEmpty()) {
@@ -112,7 +112,7 @@ object WebDavController {
     /** 从云端指定备份恢复 (body `{"name":"backup2026-09-25.zip"}`)。 */
     suspend fun restore(postData: String?): ReturnData {
         val obj = parseObject(postData) ?: return ReturnData().setErrorMsg("请求体格式错误")
-        val name = obj["name"]?.jsonPrimitive?.contentOrNull()?.trim().orEmpty()
+        val name = obj["name"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
         if (name.isEmpty()) return ReturnData().setErrorMsg("备份文件名不能为空")
         // 防目录穿越: 只允许根目录下形如 backup*.zip 的普通文件名
         if (name.contains('/') || name.contains('\\') || name.contains("..") ||
