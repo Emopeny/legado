@@ -3,7 +3,7 @@
 
 import type { webReadConfig } from '@/web'
 import ajax from './axios'
-import { authHeaders } from './auth'
+import { authHeaders, getToken } from './auth'
 import type { BaseBook, Book, BookChapter, BookGroup, BookProgress, SeachBook } from '@/book'
 import type { RawSource, Source } from '@/source'
 
@@ -120,15 +120,28 @@ const getBookContent = (
   return ajax.get<LeagdoApiResponse<string>>('getBookContent?' + params.toString())
 }
 
+/**
+ * 构造带鉴权的 WebSocket URL。
+ *
+ * 浏览器无法给 WS 握手加请求头 (且前端在 https 下写死连 wss://<host>:444, 跨端口更不会
+ * 复用 443 的 Basic 凭据), 而服务端 WebSocketServer 的鉴权正是同时接受
+ * Authorization 头与查询参数里的 token —— 故这里必须把 token 拼到 URL 上,
+ * 否则启用访问密码后握手会被直接拒绝 (表现为 onerror -> "后端连接失败")。
+ */
+const wsUrlWithToken = (path: string): URL => {
+  const url = new URL(path, legado_webSocket_entry_point)
+  const token = getToken()
+  if (token) url.searchParams.set('token', token)
+  return url
+}
+
 const search = (
   searchKey: string,
   onReceive: (data: SeachBook[]) => void,
   onFinish: () => void,
   scope?: string,
 ) => {
-  const socket = new WebSocket(
-    new URL('searchBook', legado_webSocket_entry_point),
-  )
+  const socket = new WebSocket(wsUrlWithToken('searchBook'))
   let finished = false
   const finishOnce = () => {
     if (finished) return
@@ -274,12 +287,7 @@ const debug = (
   onReceive: (data: string) => void,
   onFinish: () => void,
 ) => {
-  const url = new URL(
-    'bookSourceDebug',
-    legado_webSocket_entry_point,
-  )
-
-  const socket = new WebSocket(url)
+  const socket = new WebSocket(wsUrlWithToken('bookSourceDebug'))
   socket.onerror = wsOnError
   socket.onopen = () => {
     socket.send(JSON.stringify({ tag: sourceUrl, key: searchKey }))
