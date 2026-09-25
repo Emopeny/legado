@@ -36,10 +36,10 @@ object OpdsController {
     private const val ACQ_TYPE = "application/atom+xml;profile=opds-catalog;kind=acquisition"
 
     /** 导航目录。 */
-    suspend fun root(): WebApiResponse = stream(navigationFeed(), NAV_TYPE)
+    suspend fun root(base: String): WebApiResponse = stream(navigationFeed(base), NAV_TYPE)
 
     /** 书架取书目录。 */
-    suspend fun bookshelf(): WebApiResponse = stream(acquisitionFeed(), ACQ_TYPE)
+    suspend fun bookshelf(base: String): WebApiResponse = stream(acquisitionFeed(base), ACQ_TYPE)
 
     /** 取书: 导出后流式下发。 */
     suspend fun download(parameters: Map<String, List<String>>): WebApiResponse {
@@ -70,25 +70,25 @@ object OpdsController {
     private suspend fun shelfBooks(): List<Book> =
         AppDbProviders.get().bookDao.all().filterNot { (it.type and BookType.notShelf) > 0 }
 
-    private suspend fun navigationFeed(): String = buildString {
+    private suspend fun navigationFeed(base: String): String = buildString {
         append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")
         append("<feed xmlns=\"http://www.w3.org/2005/Atom\">\n")
         append("  <title>Legado 书架</title>\n")
         append("  <id>urn:legado:opds:root</id>\n")
         append("  <updated>${nowIso()}</updated>\n")
-        append("  <link rel=\"self\" href=\"/opds\" type=\"$NAV_TYPE\"/>\n")
-        append("  <link rel=\"start\" href=\"/opds\" type=\"$NAV_TYPE\"/>\n")
+        append("  <link rel=\"self\" href=\"$base/opds\" type=\"$NAV_TYPE\"/>\n")
+        append("  <link rel=\"start\" href=\"$base/opds\" type=\"$NAV_TYPE\"/>\n")
         append("  <entry>\n")
         append("    <title>全部书籍</title>\n")
         append("    <id>urn:legado:opds:bookshelf</id>\n")
         append("    <updated>${nowIso()}</updated>\n")
         append("    <content type=\"text\">书架上的全部书籍</content>\n")
-        append("    <link rel=\"subsection\" href=\"/opds/bookshelf\" type=\"$ACQ_TYPE\"/>\n")
+        append("    <link rel=\"subsection\" href=\"$base/opds/bookshelf\" type=\"$ACQ_TYPE\"/>\n")
         append("  </entry>\n")
         append("</feed>\n")
     }
 
-    private suspend fun acquisitionFeed(): String {
+    private suspend fun acquisitionFeed(base: String): String {
         val books = shelfBooks()
         return buildString {
             append("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n")
@@ -96,8 +96,8 @@ object OpdsController {
             append("  <title>Legado 书架 (${books.size})</title>\n")
             append("  <id>urn:legado:opds:bookshelf</id>\n")
             append("  <updated>${nowIso()}</updated>\n")
-            append("  <link rel=\"self\" href=\"/opds/bookshelf\" type=\"$ACQ_TYPE\"/>\n")
-            append("  <link rel=\"start\" href=\"/opds\" type=\"$NAV_TYPE\"/>\n")
+            append("  <link rel=\"self\" href=\"$base/opds/bookshelf\" type=\"$ACQ_TYPE\"/>\n")
+            append("  <link rel=\"start\" href=\"$base/opds\" type=\"$NAV_TYPE\"/>\n")
             books.forEach { book ->
                 val u = enc(book.bookUrl)
                 append("  <entry>\n")
@@ -106,8 +106,8 @@ object OpdsController {
                 append("    <id>${xml(book.bookUrl)}</id>\n")
                 append("    <updated>${nowIso()}</updated>\n")
                 append("    <content type=\"text\">${xml(book.intro)}</content>\n")
-                append("    <link rel=\"http://opds-spec.org/acquisition\" href=\"/opds/download?url=$u&amp;format=epub\" type=\"application/epub+zip\"/>\n")
-                append("    <link rel=\"http://opds-spec.org/acquisition\" href=\"/opds/download?url=$u&amp;format=txt\" type=\"text/plain\"/>\n")
+                append("    <link rel=\"http://opds-spec.org/acquisition\" href=\"$base/opds/download?url=$u&amp;format=epub\" type=\"application/epub+zip\"/>\n")
+                append("    <link rel=\"http://opds-spec.org/acquisition\" href=\"$base/opds/download?url=$u&amp;format=txt\" type=\"text/plain\"/>\n")
                 append("  </entry>\n")
             }
             append("</feed>\n")

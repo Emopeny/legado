@@ -32,9 +32,9 @@ object WebApi {
         // OPDS: 返回 Atom XML / 取书字节流, 不走 ReturnData 分派 (需自带状态码与 Content-Type)
         if (request.method == "GET" && request.path.startsWith("/opds")) {
             return when (request.path) {
-                "/opds/bookshelf" -> OpdsController.bookshelf()
+                "/opds/bookshelf" -> OpdsController.bookshelf(opdsBaseUrl(request))
                 "/opds/download" -> OpdsController.download(request.query)
-                else -> OpdsController.root()
+                else -> OpdsController.root(opdsBaseUrl(request))
             }
         }
         if (request.path == "/mediaStream") {
@@ -182,6 +182,17 @@ object WebApi {
             headers = mapOf("WWW-Authenticate" to "Basic realm=\"Legado\""),
             returnData = null,
         )
+    }
+
+    /**
+     * OPDS 链接必须是**绝对 URL**: KOReader 等客户端会把相对路径当无主机名的 URL,
+     * 报 "host or service not provided, or not known"。取 Host 头 + 反代的 X-Forwarded-Proto。
+     */
+    private fun opdsBaseUrl(request: WebApiRequest): String {
+        val host = request.headers["host"]?.trim()?.takeIf { it.isNotEmpty() } ?: return ""
+        val proto = request.headers["x-forwarded-proto"]
+            ?.substringBefore(',')?.trim()?.takeIf { it.isNotEmpty() } ?: "http"
+        return "$proto://$host"
     }
 
     private fun tokenOf(request: WebApiRequest): String? =
