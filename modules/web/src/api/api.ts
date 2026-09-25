@@ -259,6 +259,10 @@ const saveSources = (data: (Source | RawSource)[]) => ajax.post<LeagdoApiRespons
 
 const deleteSource = (data: (Source | RawSource)[]) => ajax.post<LeagdoApiResponse<unknown>>('deleteBookSources', data)
 
+// 服务端抓取书源链接 (浏览器直连会被 CORS / 混合内容拦, 故由后端 fetch)
+const importBookSourcesFromUrl = (url: string) =>
+  ajax.post<LeagdoApiResponse<(RawSource | Source)[]>>('importBookSourcesFromUrl', { url })
+
 const debug = (
   sourceUrl: string,
   searchKey: string,
@@ -367,6 +371,7 @@ export default {
   getExploreKinds,
   getExploreBooks,
   saveSources,
+  importBookSourcesFromUrl,
   getBackupZip,
   restoreBackup,
   addLocalBook,
@@ -388,6 +393,7 @@ export {
   getSource,
   getExploreKinds,
   getExploreBooks,
+  importBookSourcesFromUrl,
   getProxyCoverUrl,
   getProxyImageUrl,
 }

@@ -4,12 +4,17 @@ package io.legado.app.api.controller
 import io.legado.app.api.ReturnData
 import io.legado.app.data.AppDbProviders
 import io.legado.app.data.entities.BookSource
+import io.legado.app.help.http.OkHttpClientProviders
+import io.legado.app.help.http.newCallResponse
 import io.legado.app.help.source.SourceHelp
 import io.legado.app.help.source.exploreKinds
 import io.legado.app.model.webBook.WebBook
 import io.legado.app.utils.GSON
 import io.legado.app.utils.fromJsonArray
 import io.legado.app.utils.fromJsonObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * 书源 CRUD Web 接口 (shared commonMain 下沉版)。
@@ -75,6 +80,37 @@ object BookSourceController {
             }
         }
         return ReturnData().setData(okSources)
+    }
+
+    /**
+     * 服务端拉取书源链接后直接入库。
+     *
+     * 为什么必须放在服务端: 前端 web 端原来的「网络链接导入」是浏览器 `fetch(url)` 直连,
+     * 第三方站点不给 CORS 头、或链接是 http (https 页面下的混合内容) 时, 浏览器直接抛
+     * "Failed to fetch", 且这类拦截在页面侧无法绕过。旧 warpdotsys/reader 与
+     * lukelzlz/legado-server 的 `importBookSourcesFromUrl` 都是服务端抓, 行为对齐。
+     *
+     * 请求体: `{"url":"https://..."}`; 返回与 [saveSources] 一致 (已入库的源列表)。
+     */
+    suspend fun importFromUrl(postData: String?): ReturnData {
+        postData ?: return ReturnData().setErrorMsg("数据为空")
+        val sourceUrl = runCatching {
+            Json.parseToJsonElement(postData).jsonObject["url"]?.jsonPrimitive?.content
+        }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: return ReturnData().setErrorMsg("参数url不能为空，请指定书源链接")
+        val text = try {
+            val response = OkHttpClientProviders.get().okHttpClient.newCallResponse {
+                url(sourceUrl)
+                get()
+            }
+            if (!response.isSuccessful) {
+                return ReturnData().setErrorMsg("拉取失败 HTTP ${response.code}")
+            }
+            response.body.string()
+        } catch (e: Exception) {
+            return ReturnData().setErrorMsg("拉取失败: ${e.message}")
+        }
+        return saveSources(text)
     }
 
     suspend fun getSource(parameters: Map<String, List<String>>): ReturnData {

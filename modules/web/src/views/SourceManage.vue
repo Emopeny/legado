@@ -517,10 +517,19 @@ const executeImport = async () => {
     if (importTab.value === 'network') {
       const url = importUrl.value.trim()
       if (!url) return toast.info('请输入书源链接')
-      const resp = await fetch(url)
-      if (!resp.ok) throw new Error(`拉取失败 HTTP ${resp.status}`)
-      const json = await resp.json()
-      toSave = Array.isArray(json) ? json : [json]
+      // 交给服务端抓取: 浏览器直连第三方链接会被 CORS 拦截, http 链接在 https 页面下
+      // 还会被混合内容策略拦掉 (表现为 Failed to fetch), 页面侧无法绕过。
+      // 服务端抓完即入库, 故这里不再走下面的 API.saveSources。
+      const resp = await API.importBookSourcesFromUrl(url)
+      if (!resp.data.isSuccess) throw new Error(resp.data.errorMsg || '导入失败')
+      const imported = resp.data.data
+      const list = (Array.isArray(imported) ? imported : [imported]).filter(Boolean)
+      if (list.length === 0) return toast.error('未解析到任何书源数据')
+      toast.success(`成功导入 ${list.length} 个书源`)
+      showImportModal.value = false
+      importUrl.value = ''
+      await loadSources()
+      return
     } else if (importTab.value === 'text') {
       const text = importText.value.trim()
       if (!text) return toast.info('请输入书源内容')
