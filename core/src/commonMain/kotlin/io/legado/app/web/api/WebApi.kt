@@ -5,6 +5,7 @@ import io.legado.app.api.controller.BackupController
 import io.legado.app.api.controller.BookController
 import io.legado.app.api.controller.BookSourceController
 import io.legado.app.api.controller.ReplaceRuleController
+import io.legado.app.api.controller.WebDavController
 import io.legado.app.utils.toInputStream
 import io.legado.app.web.auth.WebAuthProviders
 import kotlinx.serialization.json.Json
@@ -75,6 +76,9 @@ object WebApi {
             "/saveReplaceRule" -> ReplaceRuleController.saveRule(postData)
             "/deleteReplaceRule" -> ReplaceRuleController.delete(postData)
             "/testReplaceRule" -> ReplaceRuleController.testRule(postData)
+            "/webDavConfig" -> WebDavController.saveConfig(postData)
+            "/webDavBackup" -> WebDavController.backup(postData)
+            "/webDavRestore" -> WebDavController.restore(postData)
             else -> null
         }
     }
@@ -97,6 +101,8 @@ object WebApi {
             "/image" -> BookController.getImg(parameters)
             "/getReadConfig" -> BookController.getWebReadConfig()
             "/getReplaceRules" -> ReplaceRuleController.allRules()
+            "/webDavConfig" -> WebDavController.getConfig()
+            "/webDavBackups" -> WebDavController.listBackups()
             else -> null
         }
     }
@@ -145,6 +151,7 @@ object WebApi {
         "/getBookshelf", "/getGroups", "/getChapterList", "/refreshToc",
         "/getBookContent", "/cover", "/image",
         "/getReadConfig", "/getReplaceRules",
+        "/webDavConfig", "/webDavBackups", "/webDavBackup", "/webDavRestore",
     )
 
     /** 是否通过鉴权。未注册 provider 或未配置密码时恒真 (向后兼容)。 */
