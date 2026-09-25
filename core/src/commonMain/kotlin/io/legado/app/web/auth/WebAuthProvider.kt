@@ -41,7 +41,7 @@ interface WebAuthProvider {
      * 给「只能带查询参数」的客户端用 —— 例如 KOReader 的 legado.koplugin 类型1 客户端,
      * 它的鉴权中间件只能改 QUERY_STRING, 无法设置请求头。
      */
-    fun verifyPassword(user: String, password: ***: Boolean
+    fun verifyPassword(user: String, password: String): Boolean
 
     /** 登录; 成功返回 token, 失败返回 null。 */
     fun login(user: String, password: String): String?
