@@ -68,6 +68,48 @@
         </div>
       </div>
 
+      <!-- 访问密码 -->
+      <div class="card">
+        <div class="card-title">访问密码</div>
+        <div class="card-row">
+          <div class="row-content">
+            <span class="row-label">{{ authEnabledRef ? '已启用访问密码' : '未启用访问密码' }}</span>
+            <span class="row-desc">{{
+              authEnabledRef
+                ? '服务端 API 需要登录后才能访问；修改后 KOReader 插件需用新密码登录'
+                : '设置后服务端 API 与 WebDAV 接口都需要登录（KOReader 插件请先确认能登录）'
+            }}</span>
+          </div>
+        </div>
+        <div class="webdav-form">
+          <input
+            v-if="authEnabledRef"
+            v-model="pwdForm.oldPassword"
+            class="webdav-input"
+            type="password"
+            autocomplete="current-password"
+            placeholder="当前密码"
+          />
+          <input
+            v-model="pwdForm.newPassword"
+            class="webdav-input"
+            type="password"
+            autocomplete="new-password"
+            placeholder="新密码（至少 4 位）"
+          />
+          <input
+            v-model="pwdForm.confirmPassword"
+            class="webdav-input"
+            type="password"
+            autocomplete="new-password"
+            placeholder="确认新密码"
+          />
+          <button class="backup-btn primary" type="button" :disabled="busy" @click="savePassword">
+            {{ authEnabledRef ? '修改访问密码' : '设置访问密码' }}
+          </button>
+        </div>
+      </div>
+
       <!-- WebDAV 云端备份 -->
       <div class="card">
         <div class="card-title">WebDAV 云端备份</div>
@@ -173,7 +215,7 @@ defineOptions({ name: 'MyPage' })
 import '@/assets/webui.css'
 import { useBookStore } from '@/store'
 import API from '@api'
-import { authEnabled as authEnabledRef, logout } from '@/api/auth'
+import { authEnabled as authEnabledRef, changePassword, fetchAuthMe, logout } from '@/api/auth'
 import { toast, msgbox } from '@/utils/toast'
 
 const router = useRouter()
@@ -393,6 +435,33 @@ const doWebDavRestore = async () => {
 const doLogout = async () => {
   await logout()
   router.replace('/login')
+}
+
+// ---- 访问密码 ----
+const pwdForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+
+const savePassword = async () => {
+  if (pwdForm.newPassword.length < 4) {
+    toast.warning('新密码至少 4 位')
+    return
+  }
+  if (pwdForm.newPassword !== pwdForm.confirmPassword) {
+    toast.warning('两次输入的新密码不一致')
+    return
+  }
+  busy.value = true
+  try {
+    await changePassword(pwdForm.oldPassword, pwdForm.newPassword)
+    pwdForm.oldPassword = ''
+    pwdForm.newPassword = ''
+    pwdForm.confirmPassword = ''
+    await fetchAuthMe()
+    toast.success('访问密码已更新')
+  } catch (e) {
+    toast.error((e as Error)?.message || '设置访问密码失败')
+  } finally {
+    busy.value = false
+  }
 }
 
 onMounted(loadWebDav)
