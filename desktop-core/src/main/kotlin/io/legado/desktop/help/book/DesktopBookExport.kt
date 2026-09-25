@@ -153,8 +153,13 @@ private object DesktopExportBookDeps : ExportBookDeps {
     override suspend fun exportToWebDav(uri: String, filename: String) =
         AppWebDavShared.exportWebDav(uri, filename)
 
-    override fun strAuthorShow(author: String): String = jvmGetString("author_show", author)
-    override fun strIntroShow(intro: String): String = jvmGetString("intro_show", intro)
+    // headless 取不到 app 模块的 strings.xml, jvmGetString 会原样返回 key ("author_show"),
+    // 表现为导出头部出现字面占位符。取不到时回退到内置中文格式 (app 端资源本就中文)。
+    override fun strAuthorShow(author: String): String =
+        jvmGetString("author_show", author).takeIf { it != "author_show" } ?: "作者：$author"
+
+    override fun strIntroShow(intro: String): String =
+        jvmGetString("intro_show", intro).takeIf { it != "intro_show" } ?: "简介：$intro"
 
     override fun postExportEvent(bookUrl: String) {
         postEvent(EventBus.EXPORT_BOOK, bookUrl)
