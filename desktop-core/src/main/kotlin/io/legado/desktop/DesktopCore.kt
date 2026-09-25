@@ -61,6 +61,7 @@ import io.legado.desktop.help.book.registerDesktopBookshelfManagePlatform
 import io.legado.desktop.help.changecover.DesktopCoverStorageService
 import io.legado.desktop.help.changesource.registerDesktopChangeBookSourcePlatform
 import io.legado.desktop.help.config.registerDesktopPasswordProvider
+import io.legado.desktop.help.config.registerDesktopWebAuthProvider
 import io.legado.desktop.help.initDesktopDefaultData
 import io.legado.desktop.help.log.registerDesktopAppLogHost
 import io.legado.desktop.help.registerDesktopAndroidId
@@ -342,6 +343,9 @@ object DesktopCore {
             // - PasswordProvider: 供 BackupAES 无参构造经 PasswordProviders 反向获取 password
             // - DirectLinkUploadProviders: 供 BackupShared/RestoreShared 备份恢复 directLinkUploadRule.json
             registerDesktopPasswordProvider()
+            // 内置 Web 账号体系 (Bearer token + HTTP Basic), 供 WebApi 鉴权闸门用;
+            // 需 PreferenceProviders 已就绪。未注册时鉴权关闭 (旧行为)。
+            registerDesktopWebAuthProvider()
             registerDesktopDirectLinkUploadProviders()
             // - BackupRestoreHooks: 备份/恢复的平台收尾 (lastBackup 时间戳 + 恢复完成提示);
             //   zip 复制/解压走 shared 默认文件分支, 桌面端无 SAF
