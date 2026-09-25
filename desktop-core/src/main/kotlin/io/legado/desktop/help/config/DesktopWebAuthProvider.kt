@@ -104,6 +104,11 @@ private object DesktopWebAuthProvider : WebAuthProvider {
         return true
     }
 
+    override fun verifyPassword(user: String, password: String): Boolean {
+        if (!isEnabled()) return true
+        return constantTimeEquals(user, userName()) && matches(password)
+    }
+
     override fun login(user: String, password: String): String? {
         if (!isEnabled()) return null
         if (!constantTimeEquals(user, userName()) || !matches(password)) return null
