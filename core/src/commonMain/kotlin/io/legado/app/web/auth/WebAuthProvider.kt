@@ -36,6 +36,13 @@ interface WebAuthProvider {
     /** 校验查询参数里的 token (WebSocket 握手无法自定义请求头)。 */
     fun verifyToken(token: String?): Boolean
 
+    /**
+     * 直接校验用户名/口令 (无副作用, 不签发 token)。
+     * 给「只能带查询参数」的客户端用 —— 例如 KOReader 的 legado.koplugin 类型1 客户端,
+     * 它的鉴权中间件只能改 QUERY_STRING, 无法设置请求头。
+     */
+    fun verifyPassword(user: String, password: ***: Boolean
+
     /** 登录; 成功返回 token, 失败返回 null。 */
     fun login(user: String, password: String): String?
 
