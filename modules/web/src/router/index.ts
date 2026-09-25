@@ -10,6 +10,8 @@ const router = createRouter({
     { path: '/', redirect: '/shelf' },
     // 服务端启用访问密码时, 未认证导航一律回登录页
     { path: '/login', name: 'login', component: () => import('../views/Login.vue') },
+    // 替换净化规则管理 (Web 端入口)
+    { path: '/replace-rules', name: 'replace-rules', component: () => import('../views/ReplaceRuleManage.vue') },
     ...bookRoutes,
     ...sourceRoutes,
   ].flat(),
@@ -26,6 +28,7 @@ const titleMap: Record<string, string> = {
   'book-info': '书籍详情',
   chapter: '阅读',
   login: '登录',
+  'replace-rules': '替换净化',
 }
 
 router.afterEach(to => {

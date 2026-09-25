@@ -345,6 +345,54 @@ export const getMediaStreamUrl = (url: string, _origin?: string): string => {
   return /^(https?:\/\/|data:|blob:)/i.test(clean) ? clean : ''
 }
 
+// ---- 替换净化规则 ----
+
+export interface ReplaceRuleItem {
+  id?: number
+  name: string
+  group?: string | null
+  pattern: string
+  replacement: string
+  scope?: string | null
+  scopeTitle?: boolean
+  scopeContent?: boolean
+  excludeScope?: string | null
+  isEnabled?: boolean
+  isRegex?: boolean
+  timeoutMillisecond?: number
+  order?: number
+}
+
+/** 全部替换净化规则 (服务端 data 为 JSON 字符串) */
+const getReplaceRules = async (): Promise<ReplaceRuleItem[]> => {
+  const { data } = await ajax.get<LeagdoApiResponse<string>>('getReplaceRules')
+  if (!data.isSuccess) throw new Error(data.errorMsg || '获取替换规则失败')
+  try {
+    return JSON.parse(data.data || '[]') as ReplaceRuleItem[]
+  } catch {
+    return []
+  }
+}
+
+/** 新增/更新一条替换规则 (按 id 覆盖, 新规则 order 传 Int.MIN_VALUE 由服务端排序) */
+const saveReplaceRule = async (rule: ReplaceRuleItem): Promise<void> => {
+  const { data } = await ajax.post<LeagdoApiResponse<unknown>>('saveReplaceRule', rule)
+  if (!data.isSuccess) throw new Error(data.errorMsg || '保存替换规则失败')
+}
+
+/** 删除一条替换规则 (按 id) */
+const deleteReplaceRule = async (rule: ReplaceRuleItem): Promise<void> => {
+  const { data } = await ajax.post<LeagdoApiResponse<unknown>>('deleteReplaceRule', rule)
+  if (!data.isSuccess) throw new Error(data.errorMsg || '删除替换规则失败')
+}
+
+/** 用给定规则试跑一段文本, 返回替换后的内容 */
+const testReplaceRule = async (rule: ReplaceRuleItem, text: string): Promise<string> => {
+  const { data } = await ajax.post<LeagdoApiResponse<string>>('testReplaceRule', { rule, text })
+  if (!data.isSuccess) throw new Error(data.errorMsg || '测试替换规则失败')
+  return data.data
+}
+
 // ---- WebDAV 云端备份 / 恢复 ----
 
 export interface WebDavConfig {
@@ -443,6 +491,10 @@ export default {
   listWebDavBackups,
   webDavBackup,
   webDavRestore,
+  getReplaceRules,
+  saveReplaceRule,
+  deleteReplaceRule,
+  testReplaceRule,
   saveSource,
   deleteSource,
   debug,
@@ -469,4 +521,8 @@ export {
   listWebDavBackups,
   webDavBackup,
   webDavRestore,
+  getReplaceRules,
+  saveReplaceRule,
+  deleteReplaceRule,
+  testReplaceRule,
 }

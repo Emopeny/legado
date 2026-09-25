@@ -80,14 +80,14 @@
           <div class="action-label">{{ displayAuthor || '作者' }}</div>
           <div class="action-sub">作者</div>
         </div>
-        <div class="action-cell" @click="showOriginInfo">
+        <div class="action-cell" @click="openSourcePicker">
           <div class="action-icon-box">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
             </svg>
           </div>
           <div class="action-label" :title="originText">{{ originText }}</div>
-          <div class="action-sub">来源</div>
+          <div class="action-sub">来源/换源</div>
         </div>
         <div class="action-cell">
           <div class="action-icon-box">
@@ -180,6 +180,40 @@
       :isNight="isNight"
       @select="onSelectChapter"
     />
+
+    <!-- 更换书源弹窗 -->
+    <div v-if="showSourcePicker" class="source-picker-mask" @click="closeSourcePicker">
+      <div class="source-picker" @click.stop>
+        <div class="picker-header">
+          <span>更换书源</span>
+          <button class="picker-close" type="button" @click="closeSourcePicker">&#10005;</button>
+        </div>
+        <div class="picker-sub">当前来源：{{ originText }}</div>
+        <div class="picker-body">
+          <div v-if="sourceLoading" class="picker-hint">正在全网搜索同名书籍…</div>
+          <div v-else-if="sourceCandidates.length === 0" class="picker-hint">
+            未找到其他书源的同名书籍。可到搜索页按书名搜索后从结果里换源。
+          </div>
+          <div
+            v-for="c in sourceCandidates"
+            :key="c.bookUrl"
+            class="picker-candidate"
+            :class="{ applying: applyingUrl === c.bookUrl }"
+            @click="applySource(c)"
+          >
+            <div class="cand-main">
+              <div class="cand-name">{{ c.originName || '未知书源' }}</div>
+              <div class="cand-meta">
+                <span v-if="c.author">{{ c.author }}</span>
+                <span v-if="c.wordCount">{{ c.wordCount }}</span>
+              </div>
+              <div class="cand-latest">最新：{{ c.latestChapterTitle || '未知' }}</div>
+            </div>
+            <span class="cand-action">{{ applyingUrl === c.bookUrl ? '切换中…' : '更换' }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -190,6 +224,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useBookStore } from '@/store'
 import API from '@api'
+import type { CatalogBookMetadata } from '@api'
 import { toast } from '@/utils/toast'
 import { isLegadoUrl } from '@/utils/utils'
 import type { BaseBook, Book, BookChapter, SeachBook } from '@/book'
@@ -598,6 +633,121 @@ const startReading = async (targetIndex?: number) => {
     path: '/chapter',
     query: { bookUrl: book.value.bookUrl },
   })
+}
+
+// ---- 更换书源 ----
+// 服务端 refreshToc 已内置换源: url 保持旧主键, 传新 origin/tocUrl 即触发
+// delContent(旧内容) + 重建目录 + 更新 origin/originName/tocUrl。
+const showSourcePicker = ref(false)
+const sourceCandidates = ref<SeachBook[]>([])
+const sourceLoading = ref(false)
+const applyingUrl = ref('')
+let sourceSocket: WebSocket | null = null
+
+const closeSourcePicker = () => {
+  showSourcePicker.value = false
+  try {
+    sourceSocket?.close()
+  } catch {
+    // ignore
+  }
+  sourceSocket = null
+}
+
+const loadSourceCandidates = () => {
+  if (!book.value) return
+  const key = `${book.value.name || ''} ${('author' in book.value ? book.value.author : '') || ''}`.trim()
+  if (!key) {
+    sourceLoading.value = false
+    toast.warning('书名/作者为空，无法搜索同名书籍')
+    return
+  }
+  sourceLoading.value = true
+  sourceCandidates.value = []
+  const seen = new Set<string>()
+  const currentUrl = book.value.bookUrl
+  try {
+    sourceSocket?.close()
+  } catch {
+    // ignore
+  }
+  sourceSocket = API.search(
+    key,
+    data => {
+      if (!Array.isArray(data)) return
+      for (const b of data) {
+        if (!b.bookUrl || b.bookUrl === currentUrl) continue
+        if (seen.has(b.bookUrl)) continue
+        seen.add(b.bookUrl)
+        sourceCandidates.value.push(b)
+      }
+    },
+    () => {
+      sourceLoading.value = false
+    },
+    'all',
+  )
+}
+
+const openSourcePicker = () => {
+  showSourcePicker.value = true
+  if (sourceCandidates.value.length === 0 && !sourceLoading.value) {
+    loadSourceCandidates()
+  }
+}
+
+const applySource = async (candidate: SeachBook) => {
+  if (!book.value || applyingUrl.value) return
+  applyingUrl.value = candidate.bookUrl
+  try {
+    const resp = await API.refreshToc({
+      ...(book.value as Record<string, unknown>),
+      origin: candidate.origin,
+      originName: candidate.originName,
+      tocUrl: candidate.tocUrl || '',
+      type: candidate.type,
+      coverUrl: candidate.coverUrl || undefined,
+      intro: candidate.intro || undefined,
+      kind: candidate.kind || undefined,
+      wordCount: candidate.wordCount || undefined,
+      variable: candidate.variable || undefined,
+    } as unknown as CatalogBookMetadata)
+    const { isSuccess, data, errorMsg } = resp.data
+    if (!isSuccess || !Array.isArray(data)) {
+      toast.error(errorMsg || '换源失败')
+      return
+    }
+    catalog.value = data
+    const newOrigin = candidate.origin
+    book.value = {
+      ...(book.value as Record<string, unknown>),
+      origin: newOrigin,
+      originName: candidate.originName,
+      tocUrl: candidate.tocUrl || '',
+      totalChapterNum: data.length,
+      latestChapterTitle: data.length ? data[data.length - 1].title : '',
+    } as unknown as Book
+    store.detailBook = book.value
+    const oldIdentity = store.catalogIdentity
+    store.catalog = data
+    store.catalogIdentity = `${book.value.bookUrl}\u0000${newOrigin}`
+    if (oldIdentity !== store.catalogIdentity) store.catalogGeneration++
+    toast.success(`已更换为「${candidate.originName || '新书源'}」`)
+    closeSourcePicker()
+    if (inBookshelf.value) {
+      await store.loadBookShelf(store.currentGroupId, true)
+      const updated = store.shelf.find(b => b.bookUrl === book.value?.bookUrl)
+      if (updated) {
+        book.value = { ...(book.value as Record<string, unknown>), ...updated } as unknown as Book
+        store.detailBook = book.value
+      }
+    }
+  } catch (e: unknown) {
+    console.error('[BookInfo] 换源异常:', e)
+    toast.error((e as Error)?.message || '换源失败')
+  } finally {
+    applyingUrl.value = ''
+  }
 }
 
 onMounted(() => {
@@ -1028,6 +1178,156 @@ onMounted(() => {
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* ---- 更换书源弹窗 ---- */
+.book-info-page {
+  .source-picker-mask {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 16px;
+
+    .source-picker {
+      width: 100%;
+      max-width: 460px;
+      max-height: 80vh;
+      background: #fff;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+
+      .picker-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid #f0f0f0;
+        font-size: 15px;
+        font-weight: 600;
+        color: #333;
+
+        .picker-close {
+          border: none;
+          background: transparent;
+          font-size: 15px;
+          color: #94a3b8;
+          cursor: pointer;
+        }
+      }
+
+      .picker-sub {
+        padding: 8px 16px 0;
+        font-size: 12px;
+        color: #999;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .picker-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 12px 14px;
+
+        .picker-hint {
+          padding: 22px 8px;
+          text-align: center;
+          font-size: 13px;
+          color: #999;
+          line-height: 1.6;
+        }
+
+        .picker-candidate {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 10px;
+          border-radius: 8px;
+          cursor: pointer;
+          transition: background 0.15s;
+
+          &:hover {
+            background: #f8fafc;
+          }
+
+          &.applying {
+            background: rgba(30, 128, 255, 0.08);
+          }
+
+          .cand-main {
+            flex: 1;
+            min-width: 0;
+
+            .cand-name {
+              font-size: 14px;
+              font-weight: 600;
+              color: #222;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .cand-meta {
+              display: flex;
+              gap: 8px;
+              font-size: 12px;
+              color: #888;
+              margin-top: 2px;
+            }
+
+            .cand-latest {
+              font-size: 12px;
+              color: #999;
+              margin-top: 2px;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+          }
+
+          .cand-action {
+            flex-shrink: 0;
+            font-size: 12px;
+            color: var(--web-primary, #1e80ff);
+            border: 1px solid rgba(30, 128, 255, 0.35);
+            border-radius: 4px;
+            padding: 2px 8px;
+          }
+        }
+      }
+    }
+  }
+}
+
+.book-info-page.night {
+  .source-picker-mask .source-picker {
+    background: #242526;
+    color: #ddd;
+
+    .picker-header {
+      border-bottom-color: #333;
+      color: #ddd;
+    }
+
+    .picker-body {
+      .picker-candidate {
+        &:hover {
+          background: #2b2c2e;
+        }
+
+        .cand-main .cand-name {
+          color: #ddd;
+        }
+      }
+    }
   }
 }
 </style>

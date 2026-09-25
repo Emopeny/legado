@@ -41,6 +41,15 @@
           <span class="row-label">书源管理</span>
           <span class="row-arrow">›</span>
         </div>
+
+        <!-- 替换净化 -->
+        <div class="card-row link-row" @click="router.push('/replace-rules')">
+          <div class="row-content">
+            <span class="row-label">替换净化</span>
+            <span class="row-desc">正则替换正文/标题中的广告与杂项</span>
+          </div>
+          <span class="row-arrow">›</span>
+        </div>
       </div>
 
       <!-- 备份与恢复 -->
