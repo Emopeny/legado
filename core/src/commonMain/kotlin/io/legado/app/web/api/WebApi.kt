@@ -4,7 +4,6 @@ import io.legado.app.api.ReturnData
 import io.legado.app.api.controller.BackupController
 import io.legado.app.api.controller.BookController
 import io.legado.app.api.controller.BookSourceController
-import io.legado.app.api.controller.OpdsController
 import io.legado.app.api.controller.ReplaceRuleController
 import io.legado.app.utils.toInputStream
 import io.legado.app.web.auth.WebAuthProviders
@@ -28,14 +27,6 @@ object WebApi {
         // 否则前端连登录页都加载不出来。未注册 provider 或未配置密码时 authorized() 恒真 (旧行为)。
         if (request.path in apiPaths && !authorized(request)) {
             return unauthorized()
-        }
-        // OPDS: 返回 Atom XML / 取书字节流, 不走 ReturnData 分派 (需自带状态码与 Content-Type)
-        if (request.method == "GET" && request.path.startsWith("/opds")) {
-            return when (request.path) {
-                "/opds/bookshelf" -> OpdsController.bookshelf(opdsBaseUrl(request))
-                "/opds/download" -> OpdsController.download(request.query)
-                else -> OpdsController.root(opdsBaseUrl(request))
-            }
         }
         if (request.path == "/mediaStream") {
             return mediaStreamGone(request.method)
@@ -143,8 +134,6 @@ object WebApi {
      */
     private val apiPaths = setOf(
         "/mediaStream", "/getBackupZip",
-        // OPDS (KOReader / 静读天下等标准客户端, 走 HTTP Basic)
-        "/opds", "/opds/", "/opds/bookshelf", "/opds/download",
         "/auth/logout", "/auth/password",
         "/saveBookSource", "/saveBookSources", "/deleteBookSources",
         "/saveBook", "/deleteBook", "/saveBookProgress", "/addLocalBook",
@@ -169,7 +158,7 @@ object WebApi {
 
     /**
      * 401 + `WWW-Authenticate`。必须返回真 401 而不是 200+isSuccess=false:
-     * OPDS / KOReader 这类标准客户端只有收到 401 才会弹凭据输入框。
+     * 标准客户端 (如各类 OPDS 阅读器) 只有收到 401 才会弹凭据输入框。
      */
     private fun unauthorized(): WebApiResponse {
         val body = ReturnData().setErrorMsg("未登录或凭据无效").toJsonString().encodeToByteArray()
@@ -184,16 +173,6 @@ object WebApi {
         )
     }
 
-    /**
-     * OPDS 链接必须是**绝对 URL**: KOReader 等客户端会把相对路径当无主机名的 URL,
-     * 报 "host or service not provided, or not known"。取 Host 头 + 反代的 X-Forwarded-Proto。
-     */
-    private fun opdsBaseUrl(request: WebApiRequest): String {
-        val host = request.headers["host"]?.trim()?.takeIf { it.isNotEmpty() } ?: return ""
-        val proto = request.headers["x-forwarded-proto"]
-            ?.substringBefore(',')?.trim()?.takeIf { it.isNotEmpty() } ?: "http"
-        return "$proto://$host"
-    }
 
     private fun tokenOf(request: WebApiRequest): String? =
         request.headers["authorization"]

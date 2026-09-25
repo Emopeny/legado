@@ -108,35 +108,16 @@ val copyQuickjsNativeToHeadlessResources = tasks.register<Copy>("copyQuickjsNati
     }
 }
 
-// ============================================================
-// 导出模板资源 (app/src/main/assets) 复制进 jar 资源
-// ============================================================
-// 书籍导出 (txt/epub) 的模板与样式在 app 端是 Android assets
-// (app/src/main/assets/epub/*.html|css, app/src/main/assets/font/number.ttf),
-// 而 :headless 分发包不含 app 模块 —— 于是 DesktopExportBookDeps.getBuiltinAsset("epub/fonts.css")
-// 抛 "内置 EPUB 资源不存在", 表现为 OPDS 取书 epub 直接 500、txt 模板变量不替换。
-// 这里把它们打进 headless 资源根, 与 app 端 classpath 语义一致
-// (getResourceAsStream("epub/...") 可解析)。
-val appAssetsDir = file("${rootProject.projectDir}/app/src/main/assets")
-val headlessAppAssetsResDir = layout.buildDirectory.dir("generated/app-assets")
-
-val copyAppAssetsToHeadlessResources = tasks.register<Copy>("copyAppAssetsToHeadlessResources") {
-    from(appAssetsDir)
-    into(headlessAppAssetsResDir)
-}
 
 sourceSets {
     main {
         // 资源目录指向任务输出目录 (build/generated, 不污染源码树, 免 .gitignore)
         resources.srcDir(headlessNativeResDir)
-        // 导出模板 (epub/ 与 font/), 供 DesktopExportBookDeps.getBuiltinAsset 读取
-        resources.srcDir(headlessAppAssetsResDir)
     }
 }
 
 tasks.named("processResources") {
     dependsOn(copyQuickjsNativeToHeadlessResources)
-    dependsOn(copyAppAssetsToHeadlessResources)
 }
 
 // ============================================================
