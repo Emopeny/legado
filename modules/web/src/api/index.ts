@@ -50,6 +50,19 @@ const responseCheckInterceptor = (resp: ApiResponse) => {
     toast.error({ message: '未登录或凭据已失效，请重新登录', grouping: true })
     throw new Error('未登录或凭据已失效')
   }
+  // 服务端对「带了 token 但已失效」返回 200 + isSuccess=false + NEED_LOGIN
+  // (token 仅内存, 服务端一重启就失效) —— 这里必须清 token 回登录页, 否则会一直报错。
+  const env = resp.data as { isSuccess?: boolean; errorMsg?: string } | null
+  if (
+    env &&
+    env.isSuccess === false &&
+    typeof env.errorMsg === 'string' &&
+    env.errorMsg.includes('NEED_LOGIN')
+  ) {
+    handleUnauthorized()
+    throw new Error('登录已失效，请重新登录')
+  }
+
   let isLeagdoApiResponse = true
   try {
     const data = resp.data as Record<string, unknown>

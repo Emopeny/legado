@@ -27,7 +27,12 @@ object WebApi {
         // 鉴权闸门: 只拦已知 API 路由; 静态资源 (登录界面本体 / 帮助页 / favicon) 一律放行,
         // 否则前端连登录页都加载不出来。未注册 provider 或未配置密码时 authorized() 恒真 (旧行为)。
         if (request.path in apiPaths && !authorized(request)) {
-            return unauthorized()
+            // 带了凭据但校验不通过 = 会话已失效 (token 仅内存, 服务端重启即失效)。
+            // 这里回 200 信封 + NEED_LOGIN 而不是真 401: KOReader 插件 (legado.koplugin)
+            // 只在 isSuccess=false 且消息含 NEED_LOGIN 时才清 token 重登; 若回真 401, 插件会
+            // 一直拿失效 token 反复 401 且永不重登 (2026-09-25 实测: 插件 3 次 401 且无 /auth/login)。
+            // 完全未带凭据时仍回真 401 —— 前端登录跳转与标准客户端依赖它。
+            return if (hasCredentials(request)) sessionExpired() else unauthorized()
         }
         if (request.path == "/mediaStream") {
             return mediaStreamGone(request.method)
@@ -180,6 +185,34 @@ object WebApi {
         )
     }
 
+
+    /** 请求是否携带了任何凭据 (Authorization 头 或 ?token=***) */
+    private fun hasCredentials(request: WebApiRequest): Boolean {
+        if (!request.headers["authorization"].isNullOrBlank()) return true
+        return !request.query["token"]?.firstOrNull().isNullOrBlank()
+    }
+
+    /**
+     * 会话失效: HTTP 200 + `isSuccess=false` + 消息含 `NEED_LOGIN`。
+     *
+     * 契约来自 KOReader 插件 (legado.koplugin) 的 `isNeedLogin`: 它只认这个组合才会
+     * `tokenManager:clear()` 并重新 `POST /auth/login`。不返回任何数据。
+     */
+    private fun sessionExpired(): WebApiResponse {
+        val body = ReturnData()
+            .setErrorMsg("NEED_LOGIN 登录已失效, 请重新登录")
+            .toJsonString()
+            .encodeToByteArray()
+        return WebApiResponse.Stream(
+            inputStream = body.toInputStream(),
+            contentType = "application/json; charset=utf-8",
+            contentLength = body.size.toLong(),
+            statusCode = 200,
+            statusMessage = "OK",
+            headers = mapOf("Cache-Control" to "no-store"),
+            returnData = null,
+        )
+    }
 
     private fun tokenOf(request: WebApiRequest): String? =
         request.headers["authorization"]
